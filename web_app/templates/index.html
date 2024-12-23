@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Downloader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+            /* Add this to prevent page scroll when div scrolls */
+            overflow-y: hidden;
+            height: 100vh;
+        }
+    
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            /* Add this to make container fill available height */
+            height: calc(100% - 40px);
+            display: flex;
+            flex-direction: column;
+        }
+    
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+    
+        .form-group {
+            margin-bottom: 20px;
+        }
+    
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+    
+        input[type="url"] {
+            width: 100%;
+            padding: 8px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+    
+        .button-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+    
+        button {
+            padding: 10px 24px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+    
+        button:hover {
+            background-color: #45a049;
+        }
+    
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    
+        #output {
+            margin-top: 20px;
+            padding: 10px;
+            font-family: monospace;
+            background-color: #1e1e1e;
+            color: #00ff00;
+            border-radius: 4px;
+            /* Updated these properties for better scrolling */
+            flex: 1;
+            overflow-y: auto;
+            min-height: 200px;
+            max-height: none; /* Remove max-height to use flex instead */
+            word-wrap: break-word; /* Prevent horizontal scrolling */
+            line-height: 1.5; /* Better line spacing */
+        }
+    
+        .status {
+            text-align: center;
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+            /* Add padding to prevent overlap with scrolled content */
+            padding: 10px 0;
+        }
+    
+        .error {
+            color: #ff0000;
+        }
+    
+        /* Add smooth scrolling */
+        #output {
+            scroll-behavior: smooth;
+        }
+    
+        /* Style the scrollbar */
+        #output::-webkit-scrollbar {
+            width: 8px;
+        }
+    
+        #output::-webkit-scrollbar-track {
+            background: #2e2e2e;
+            border-radius: 4px;
+        }
+    
+        #output::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+    
+        #output::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>    
+</head>
+<body>
+    <div class="container">
+        <h1>Video Downloader</h1>
+        <div class="form-group">
+            <label for="videoUrl">Video URL:</label>
+            <input type="url" id="videoUrl" placeholder="Enter Video URL here" maxlength="200">
+        </div>
+
+        <div class="button-container">
+            <button id="downloadBtn">Download</button>
+        </div>
+
+        <div id="output"></div>
+        <div class="status" id="status">Welcome! Enter a Video URL to download.</div>
+    </div>
+
+    <script>
+        class VideoDownloader {
+            constructor() {
+                this.videoUrl = document.getElementById('videoUrl');
+                this.downloadBtn = document.getElementById('downloadBtn');
+                this.output = document.getElementById('output');
+                this.status = document.getElementById('status');
+                this.currentSessionId = null;
+                this.progressInterval = null;
+
+                this.setupEventListeners();
+            }
+
+            setupEventListeners() {
+                this.downloadBtn.addEventListener('click', () => this.handleDownload());
+                this.videoUrl.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.handleDownload();
+                    }
+                });
+            }
+
+            log(message, isError = false) {
+                const time = new Date().toLocaleTimeString();
+                const color = isError ? '#ff0000' : '#00ff00';
+                
+                // Create a new div for the log entry
+                const logEntry = document.createElement('div');
+                logEntry.style.color = color;
+                logEntry.style.padding = '2px 0';
+                logEntry.textContent = `[${time}] ${message}`;
+                
+                // Add the log entry to the output
+                this.output.appendChild(logEntry);
+                this.output.scrollTop = this.output.scrollHeight;
+            }
+
+            async handleDownload() {
+                const url = this.videoUrl.value.trim();
+                if (!url) {
+                    this.log('Please enter a valid URL', true);
+                    return;
+                }
+
+                this.downloadBtn.disabled = true;
+                this.log('Starting download...');
+
+                try {
+                    const response = await fetch('/download', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ url })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        this.currentSessionId = data.download_id;
+                        this.startProgressTracking();
+                    } else {
+                        throw new Error(data.error || 'Failed to start download');
+                    }
+                } catch (error) {
+                    this.log(`Error: ${error.message}`, true);
+                    this.downloadBtn.disabled = false;
+                }
+            }
+
+            startProgressTracking() {
+                if (this.progressInterval) {
+                    clearInterval(this.progressInterval);
+                }
+
+                this.progressInterval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`/status/${this.currentSessionId}`);
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            // Only log if the progress message has changed
+                            if (this.lastProgress !== data.progress) {
+                                this.log(data.progress);
+                                this.lastProgress = data.progress;
+                            }
+
+                            if (data.status === 'completed' || data.status === 'error') {
+                                this.stopProgressTracking();
+                            }
+                        } else {
+                            throw new Error(data.error || 'Failed to get progress');
+                        }
+                    } catch (error) {
+                        this.log(`Error: ${error.message}`, true);
+                        this.stopProgressTracking();
+                    }
+                }, 1000);
+            }
+
+            stopProgressTracking() {
+                if (this.progressInterval) {
+                    clearInterval(this.progressInterval);
+                    this.progressInterval = null;
+                }
+                this.downloadBtn.disabled = false;
+                this.lastProgress = null;
+            }
+        }
+
+        // Initialize the application
+        new VideoDownloader();
+
+    </script>
+</body>
+</html>
